@@ -1,0 +1,76 @@
+version: '3.8'
+
+services:
+  postgres:
+    image: postgres:13
+    environment:
+      POSTGRES_USER: airflow
+      POSTGRES_PASSWORD: airflow
+      POSTGRES_DB: airflow
+    volumes:
+      - postgres_data:/var/lib/postgresql/data
+
+  airflow-init:
+    image: apache/airflow:2.3.0
+    depends_on:
+      - postgres
+    environment:
+      AIRFLOW__CORE__EXECUTOR: LocalExecutor
+      AIRFLOW__CORE__SQL_ALCHEMY_CONN: postgresql+psycopg2://airflow:airflow@postgres/airflow
+      AIRFLOW__CORE__LOAD_EXAMPLES: 'false'
+    volumes:
+      - ./dags:/opt/airflow/dags
+    entrypoint: /bin/bash -c "airflow db init && airflow users create --username airflow --firstname Air --lastname Flow --role Admin --email airflow@example.com --password airflow"
+
+  webserver:
+    image: apache/airflow:2.3.0
+    depends_on:
+      - postgres
+      - airflow-init
+    environment:
+      AIRFLOW__CORE__EXECUTOR: LocalExecutor
+      AIRFLOW__CORE__SQL_ALCHEMY_CONN: postgresql+psycopg2://airflow:airflow@postgres/airflow
+      AIRFLOW__WEBSERVER__RBAC: 'true'
+      AIRFLOW__WEBSERVER__SECRET_KEY: 'mysecretkey'
+      AIRFLOW__WEBSERVER__AUTHENTICATE: 'true'
+      AIRFLOW__WEBSERVER__AUTH_BACKEND: 'airflow.contrib.auth.backends.password_auth'
+    volumes:
+      - ./dags:/opt/airflow/dags
+    ports:
+      - "8081:8080"
+    command: webserver
+
+  scheduler:
+    image: apache/airflow:2.3.0
+    depends_on:
+      - postgres
+      - airflow-init
+    environment:
+      AIRFLOW__CORE__EXECUTOR: LocalExecutor
+      AIRFLOW__CORE__SQL_ALCHEMY_CONN: postgresql+psycopg2://airflow:airflow@postgres/airflow
+    volumes:
+      - ./dags:/opt/airflow/dags
+    command: scheduler
+
+  spark-master:
+    image: bitnami/spark:3.1.2
+    environment:
+      - SPARK_MODE=master
+    ports:
+      - "8082:8080"
+    volumes:
+      - spark_data:/bitnami
+
+  spark-worker:
+    image: bitnami/spark:3.1.2
+    environment:
+      - SPARK_MODE=worker
+      - SPARK_MASTER_URL=spark://spark-master:7077
+    depends_on:
+      - spark-master
+    volumes:
+      - spark_data:/bitnami
+
+volumes:
+  postgres_data:
+  spark_data:
